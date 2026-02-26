@@ -237,6 +237,9 @@ Make a one time donation in a crypto currency of your choice. If you prefer to d
 Alternatively, sponsor me on Github using [Github Sponsors](https://github.com/sponsors/JKorf). 
 
 ## Release notes
+* Version 1.4.1 - 26 Feb 2026
+    * Updated LastTradePrice on PolymarketBookUpdate model to nullable
+
 * Version 1.4.0 - 24 Feb 2026
     * Updated CryptoExchange.Net to version 10.7.0
     * Added restClient.ClobApi.Trading.PostOrderHeartbeatAsync endpoint
