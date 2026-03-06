@@ -296,7 +296,7 @@ namespace Polymarket.Net.Interfaces.Clients.GammaApi
         /// Get events
         /// <para>
         /// Docs:<br />
-        /// <a href="https://docs.polymarket.com/api-reference/events/list-events" /><br />
+        /// <a href="https://docs.polymarket.com/api-reference/markets/list-markets" /><br />
         /// Endpoint:<br />
         /// GET /markets
         /// </para>

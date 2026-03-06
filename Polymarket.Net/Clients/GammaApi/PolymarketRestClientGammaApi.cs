@@ -391,6 +391,7 @@ namespace Polymarket.Net.Clients.GammaApi
             parameters.AddOptional("tag_id", tagId);
             parameters.AddOptional("slug", slugs);
             parameters.AddOptional("clob_token_ids", clobTokenIds);
+            parameters.AddOptional("condition_ids", conditionIds);
             parameters.AddOptional("market_maker_address", marketMakerAddresses);
             parameters.AddOptional("uma_resolution_status", umaResolutionStatus);
             parameters.AddOptional("game_id", gameId);
