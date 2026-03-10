@@ -14,6 +14,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices;
@@ -28,6 +29,21 @@ namespace Polymarket.Net.Clients.ClobApi
         private static readonly RequestDefinitionCache _definitions = new RequestDefinitionCache();
         private readonly PolymarketRestClientClobApi _baseClient;
         private readonly ILogger _logger;
+
+        private record RoundingConfig
+        {
+            public int Price { get; set; }
+            public int Size { get; set; }
+            public int Amount { get; set; }
+        }
+
+        private static Dictionary<decimal, RoundingConfig> _roundingConfig = new()
+        {
+            { 0.1m, new RoundingConfig { Price = 1, Size = 2, Amount = 3 } },
+            { 0.01m, new RoundingConfig { Price = 2, Size = 2, Amount = 4 } },
+            { 0.001m, new RoundingConfig { Price = 3, Size = 2, Amount = 5 } },
+            { 0.0001m, new RoundingConfig { Price = 4, Size = 2, Amount = 6 } },
+        };
 
         internal PolymarketRestClientClobApiTrading(ILogger logger, PolymarketRestClientClobApi baseClient)
         {
@@ -54,7 +70,7 @@ namespace Polymarket.Net.Clients.ClobApi
             if (!tokenResult)
                 return new WebCallResult<PolymarketOrderResult>(tokenResult.Error);
 
-            var makerTakerQuantities = await GetMakerTakerQuantitiesAsync(tokenId, side, orderType, quantity, price, timeInForce).ConfigureAwait(false);
+            var makerTakerQuantities = await GetMakerTakerQuantitiesAsync(tokenId, side, orderType, quantity, price, timeInForce, tokenResult.Data.TickQuantity).ConfigureAwait(false);
             if (!makerTakerQuantities)
                 return new WebCallResult<PolymarketOrderResult>(makerTakerQuantities.Error);
 
@@ -105,7 +121,7 @@ namespace Polymarket.Net.Clients.ClobApi
                 if (!tokenResult)
                     return new WebCallResult<CallResult<PolymarketOrderResult>[]>(tokenResult.Error);
 
-                var makerTakerQuantities = await GetMakerTakerQuantitiesAsync(request.TokenId, request.Side, request.OrderType, request.Quantity, request.Price, request.TimeInForce).ConfigureAwait(false);
+                var makerTakerQuantities = await GetMakerTakerQuantitiesAsync(request.TokenId, request.Side, request.OrderType, request.Quantity, request.Price, request.TimeInForce, tokenResult.Data.TickQuantity).ConfigureAwait(false);
                 if (!makerTakerQuantities)
                     return new WebCallResult<CallResult<PolymarketOrderResult>[]>(makerTakerQuantities.Error);
 
@@ -160,8 +176,10 @@ namespace Polymarket.Net.Clients.ClobApi
             return result.As(ordersResult.ToArray());
         }
 
-        private async Task<CallResult<(decimal MakerQuantity, decimal TakerQuantity)>> GetMakerTakerQuantitiesAsync(string tokenId, OrderSide side, OrderType orderType, decimal quantity, decimal? price, TimeInForce? timeInForce)
+        private async Task<CallResult<(decimal MakerQuantity, decimal TakerQuantity)>> GetMakerTakerQuantitiesAsync(string tokenId, OrderSide side, OrderType orderType, decimal quantity, decimal? price, TimeInForce? timeInForce, decimal tickSize)
         {
+            var rounding = _roundingConfig.TryGetValue(tickSize, out var config) ? config : throw new ArgumentException($"Tick size {tickSize} not mapped to rounding config");
+
             decimal takerQuantity;
             decimal makerQuantity;
             if (orderType == OrderType.Limit)
@@ -221,22 +239,33 @@ namespace Polymarket.Net.Clients.ClobApi
 
                     price = marketPrice ?? bookInfo.Data.Bids[0].Price;
                 }
-
-                price = Math.Round(price!.Value, 3).Normalize();
             }
 
+            price = Math.Round(price!.Value, rounding.Price).Normalize();
             if (side == OrderSide.Buy)
             {
-                takerQuantity = ExchangeHelpers.RoundDown(quantity, 2);
+                takerQuantity = ExchangeHelpers.RoundDown(quantity, rounding.Size);
                 makerQuantity = takerQuantity * price.Value;
+
+                if (GetDecimalPlaces(makerQuantity) > rounding.Amount)
+                {
+                    makerQuantity = ExchangeHelpers.RoundUp(makerQuantity, rounding.Amount + 4);
+                    if (GetDecimalPlaces(makerQuantity) > rounding.Amount)
+                        makerQuantity = ExchangeHelpers.RoundDown(makerQuantity, rounding.Amount);
+                }
             }
             else
             {
-                makerQuantity = ExchangeHelpers.RoundDown(quantity, 2);
+                makerQuantity = ExchangeHelpers.RoundDown(quantity, rounding.Size);
                 takerQuantity = makerQuantity * price.Value;
-            }
 
-            takerQuantity = ExchangeHelpers.RoundDown(takerQuantity, 2);
+                if (GetDecimalPlaces(takerQuantity) > rounding.Amount)
+                {
+                    takerQuantity = ExchangeHelpers.RoundUp(takerQuantity, rounding.Amount + 4);
+                    if (GetDecimalPlaces(takerQuantity) > rounding.Amount)
+                        takerQuantity = ExchangeHelpers.RoundDown(takerQuantity, rounding.Amount);
+                }
+            }
 
             takerQuantity *= 1000000;
             makerQuantity *= 1000000;
@@ -359,5 +388,14 @@ namespace Polymarket.Net.Clients.ClobApi
             return result;
         }
 
+        private static int GetDecimalPlaces(decimal value)
+        {
+            var s = value.ToString("G29", CultureInfo.InvariantCulture);
+            var idx = s.IndexOf('.');
+            if (idx < 0) 
+                return 0;
+
+            return s.Length - idx - 1;
+        }
     }
 }
